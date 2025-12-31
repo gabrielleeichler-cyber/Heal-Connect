@@ -103,27 +103,33 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // Apply security headers (HIPAA requirement)
+  // Note: CSP is relaxed in development for Vite HMR. In production, stricter rules apply.
+  const isProduction = process.env.NODE_ENV === "production";
   app.use(helmet({
-    contentSecurityPolicy: {
+    contentSecurityPolicy: isProduction ? {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // Needed for styled-components/emotion
         imgSrc: ["'self'", "data:", "https:"],
         connectSrc: ["'self'", "https:"],
         fontSrc: ["'self'", "data:"],
         objectSrc: ["'none'"],
         mediaSrc: ["'self'"],
         frameSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
       },
-    },
+    } : false, // Disable CSP in development for Vite HMR
     hsts: {
       maxAge: 31536000,
       includeSubDomains: true,
+      preload: true,
     },
     noSniff: true,
     xssFilter: true,
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    frameguard: { action: "deny" },
   }));
 
   // Session activity tracking middleware (for session timeout)
@@ -303,6 +309,8 @@ export async function registerRoutes(
     const role = await getUserRole(req);
     
     if (isTherapistRole(role)) {
+      // Log therapist access to all treatment plans (HIPAA audit)
+      await createAuditEntry(userId, "view_all", "treatment_plan", undefined, undefined, req);
       const plans = await storage.getAllTreatmentPlans();
       res.json(plans);
     } else {
@@ -356,10 +364,21 @@ export async function registerRoutes(
 
   // ===== TREATMENT GOALS (therapist or own plan only) =====
   app.get("/api/treatment-goals/:planId", isAuthenticated, async (req: any, res) => {
+    const userId = getUserId(req);
+    const role = await getUserRole(req);
     const planId = parseInt(req.params.planId);
+    
     if (!(await verifyPlanAccess(req, planId))) {
       return res.status(403).json({ message: "Access denied" });
     }
+    
+    // Log access to treatment goals (HIPAA audit)
+    const plans = await storage.getAllTreatmentPlans();
+    const plan = plans.find(p => p.id === planId);
+    if (plan && isTherapistRole(role)) {
+      await createAuditEntry(userId!, "view", "treatment_goals", String(planId), plan.clientId, req);
+    }
+    
     const goals = await storage.getGoals(planId);
     res.json(goals);
   });
@@ -409,6 +428,16 @@ export async function registerRoutes(
       if (!goals.some(g => g.id === goalId)) {
         return res.status(403).json({ message: "Access denied" });
       }
+    } else {
+      // Therapist accessing objectives - log for HIPAA audit
+      const allPlans = await storage.getAllTreatmentPlans();
+      const allGoals = await Promise.all(allPlans.map(p => storage.getGoals(p.id)));
+      for (let i = 0; i < allPlans.length; i++) {
+        if (allGoals[i].some(g => g.id === goalId)) {
+          await createAuditEntry(userId!, "view", "treatment_objectives", String(goalId), allPlans[i].clientId, req);
+          break;
+        }
+      }
     }
     
     const objectives = await storage.getObjectives(goalId);
@@ -432,7 +461,28 @@ export async function registerRoutes(
 
   // ===== TREATMENT PROGRESS (therapist only for write) =====
   app.get("/api/treatment-progress/:objectiveId", isAuthenticated, requireTherapist, async (req: any, res) => {
-    const progress = await storage.getProgress(parseInt(req.params.objectiveId));
+    const userId = getUserId(req);
+    const objectiveId = parseInt(req.params.objectiveId);
+    
+    // Derive client from objective -> goal -> plan chain for HIPAA audit
+    let targetClientId: string | undefined;
+    const allPlans = await storage.getAllTreatmentPlans();
+    for (const plan of allPlans) {
+      const goals = await storage.getGoals(plan.id);
+      for (const goal of goals) {
+        const objectives = await storage.getObjectives(goal.id);
+        if (objectives.some(o => o.id === objectiveId)) {
+          targetClientId = plan.clientId;
+          break;
+        }
+      }
+      if (targetClientId) break;
+    }
+    
+    // Log therapist access to progress notes with client context (HIPAA audit)
+    await createAuditEntry(userId!, "view", "treatment_progress", String(objectiveId), targetClientId, req);
+    
+    const progress = await storage.getProgress(objectiveId);
     res.json(progress);
   });
 
