@@ -35,13 +35,23 @@ import JournalPage from "@/pages/journal";
 import ResourcesPage from "@/pages/resources";
 import HomeworkPage from "@/pages/homework";
 import RemindersPage from "@/pages/reminders";
+import TreatmentPlanPage from "@/pages/treatment-plan";
 import AdminPage from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 import { ReminderNotifier } from "@/components/ReminderNotifier";
+import { Target } from "lucide-react";
 
 const clientNavItems = [
   { title: "Dashboard", url: "/", icon: Home },
+  { title: "Treatment Plan", url: "/treatment-plan", icon: Target },
   { title: "Journal", url: "/journal", icon: BookOpen },
+  { title: "Resources", url: "/resources", icon: FileText },
+  { title: "Homework", url: "/homework", icon: ClipboardList },
+  { title: "Reminders", url: "/reminders", icon: Bell },
+];
+
+const officeAdminNavItems = [
+  { title: "Dashboard", url: "/", icon: Home },
   { title: "Resources", url: "/resources", icon: FileText },
   { title: "Homework", url: "/homework", icon: ClipboardList },
   { title: "Reminders", url: "/reminders", icon: Bell },
@@ -50,6 +60,7 @@ const clientNavItems = [
 const therapistNavItems = [
   { title: "Dashboard", url: "/", icon: Home },
   { title: "Admin", url: "/admin", icon: Settings },
+  { title: "Treatment Plan", url: "/treatment-plan", icon: Target },
   { title: "Resources", url: "/resources", icon: FileText },
   { title: "Homework", url: "/homework", icon: ClipboardList },
   { title: "Reminders", url: "/reminders", icon: Bell },
@@ -59,8 +70,12 @@ function AppSidebar() {
   const [location] = useLocation();
   const { user, logout, isLoggingOut } = useAuth();
   
-  const isTherapist = user?.role === "therapist" || user?.isTherapist === true;
-  const navItems = isTherapist ? therapistNavItems : clientNavItems;
+  const getNavItems = () => {
+    if (user?.role === "therapist") return therapistNavItems;
+    if (user?.role === "office_admin") return officeAdminNavItems;
+    return clientNavItems;
+  };
+  const navItems = getNavItems();
 
   return (
     <Sidebar>
@@ -104,7 +119,7 @@ function AppSidebar() {
               {user?.firstName || user?.email || "User"}
             </p>
             <p className="text-xs text-muted-foreground truncate">
-              {user?.role || "Client"}
+              {user?.role === "therapist" ? "Therapist" : user?.role === "office_admin" ? "Office Admin" : "Client"}
             </p>
           </div>
           <Button 
@@ -145,6 +160,7 @@ function AuthenticatedApp() {
               <Route path="/resources" component={ResourcesPage} />
               <Route path="/homework" component={HomeworkPage} />
               <Route path="/reminders" component={RemindersPage} />
+              <Route path="/treatment-plan" component={TreatmentPlanPage} />
               <Route path="/admin" component={AdminPage} />
               <Route component={NotFound} />
             </Switch>

@@ -1,23 +1,30 @@
 import { db } from "./db";
 import { 
   users, journals, prompts, resources, homework, reminders,
+  treatmentPlans, treatmentGoals, treatmentObjectives, treatmentProgress,
   type User, type InsertUser,
   type Journal, type InsertJournal,
   type Prompt, type InsertPrompt,
   type Resource, type InsertResource,
   type Homework, type InsertHomework,
-  type Reminder, type InsertReminder
+  type Reminder, type InsertReminder,
+  type TreatmentPlan, type InsertTreatmentPlan,
+  type TreatmentGoal, type InsertTreatmentGoal,
+  type TreatmentObjective, type InsertTreatmentObjective,
+  type TreatmentProgress, type InsertTreatmentProgress
 } from "@shared/schema";
-import { eq, desc, or, isNull } from "drizzle-orm";
+import { eq, desc, or, isNull, and } from "drizzle-orm";
 
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getClients(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserRole(id: string, role: string): Promise<User>;
 
   // Journals
   getJournals(userId: string): Promise<Journal[]>;
+  getSharedJournals(clientId: string): Promise<Journal[]>;
   createJournal(journal: InsertJournal): Promise<Journal>;
 
   // Prompts
@@ -44,6 +51,28 @@ export interface IStorage {
   getAllReminders(): Promise<Reminder[]>;
   createReminder(reminder: InsertReminder): Promise<Reminder>;
   deleteReminder(id: number): Promise<void>;
+
+  // Treatment Plans
+  getTreatmentPlan(clientId: string): Promise<TreatmentPlan | undefined>;
+  getAllTreatmentPlans(): Promise<TreatmentPlan[]>;
+  createTreatmentPlan(plan: InsertTreatmentPlan): Promise<TreatmentPlan>;
+  updateTreatmentPlan(id: number, updates: Partial<InsertTreatmentPlan>): Promise<TreatmentPlan>;
+
+  // Treatment Goals
+  getGoals(planId: number): Promise<TreatmentGoal[]>;
+  createGoal(goal: InsertTreatmentGoal): Promise<TreatmentGoal>;
+  updateGoal(id: number, updates: Partial<InsertTreatmentGoal>): Promise<TreatmentGoal>;
+  deleteGoal(id: number): Promise<void>;
+
+  // Treatment Objectives
+  getObjectives(goalId: number): Promise<TreatmentObjective[]>;
+  createObjective(objective: InsertTreatmentObjective): Promise<TreatmentObjective>;
+  updateObjective(id: number, updates: Partial<InsertTreatmentObjective>): Promise<TreatmentObjective>;
+  deleteObjective(id: number): Promise<void>;
+
+  // Treatment Progress
+  getProgress(objectiveId: number): Promise<TreatmentProgress[]>;
+  createProgress(progress: InsertTreatmentProgress): Promise<TreatmentProgress>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -62,10 +91,24 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async updateUserRole(id: string, role: string): Promise<User> {
+    const [user] = await db.update(users)
+      .set({ role, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
   // Journals
   async getJournals(userId: string): Promise<Journal[]> {
     return await db.select().from(journals)
       .where(eq(journals.userId, userId))
+      .orderBy(desc(journals.date));
+  }
+
+  async getSharedJournals(clientId: string): Promise<Journal[]> {
+    return await db.select().from(journals)
+      .where(and(eq(journals.userId, clientId), eq(journals.isShared, true)))
       .orderBy(desc(journals.date));
   }
 
@@ -96,10 +139,9 @@ export class DatabaseStorage implements IStorage {
     await db.delete(prompts).where(eq(prompts.id, id));
   }
 
-  // Resources - filter by client or show all (clientId = null)
+  // Resources
   async getResources(clientId?: string): Promise<Resource[]> {
     if (clientId) {
-      // Get resources assigned to this client OR general resources
       return await db.select().from(resources)
         .where(or(eq(resources.clientId, clientId), isNull(resources.clientId)))
         .orderBy(desc(resources.createdAt));
@@ -170,6 +212,90 @@ export class DatabaseStorage implements IStorage {
 
   async deleteReminder(id: number): Promise<void> {
     await db.delete(reminders).where(eq(reminders.id, id));
+  }
+
+  // Treatment Plans
+  async getTreatmentPlan(clientId: string): Promise<TreatmentPlan | undefined> {
+    const [plan] = await db.select().from(treatmentPlans)
+      .where(eq(treatmentPlans.clientId, clientId));
+    return plan;
+  }
+
+  async getAllTreatmentPlans(): Promise<TreatmentPlan[]> {
+    return await db.select().from(treatmentPlans).orderBy(desc(treatmentPlans.createdAt));
+  }
+
+  async createTreatmentPlan(insertPlan: InsertTreatmentPlan): Promise<TreatmentPlan> {
+    const [plan] = await db.insert(treatmentPlans).values(insertPlan).returning();
+    return plan;
+  }
+
+  async updateTreatmentPlan(id: number, updates: Partial<InsertTreatmentPlan>): Promise<TreatmentPlan> {
+    const [plan] = await db.update(treatmentPlans)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(treatmentPlans.id, id))
+      .returning();
+    return plan;
+  }
+
+  // Treatment Goals
+  async getGoals(planId: number): Promise<TreatmentGoal[]> {
+    return await db.select().from(treatmentGoals)
+      .where(eq(treatmentGoals.planId, planId))
+      .orderBy(treatmentGoals.order);
+  }
+
+  async createGoal(insertGoal: InsertTreatmentGoal): Promise<TreatmentGoal> {
+    const [goal] = await db.insert(treatmentGoals).values(insertGoal).returning();
+    return goal;
+  }
+
+  async updateGoal(id: number, updates: Partial<InsertTreatmentGoal>): Promise<TreatmentGoal> {
+    const [goal] = await db.update(treatmentGoals)
+      .set(updates)
+      .where(eq(treatmentGoals.id, id))
+      .returning();
+    return goal;
+  }
+
+  async deleteGoal(id: number): Promise<void> {
+    await db.delete(treatmentGoals).where(eq(treatmentGoals.id, id));
+  }
+
+  // Treatment Objectives
+  async getObjectives(goalId: number): Promise<TreatmentObjective[]> {
+    return await db.select().from(treatmentObjectives)
+      .where(eq(treatmentObjectives.goalId, goalId))
+      .orderBy(treatmentObjectives.order);
+  }
+
+  async createObjective(insertObjective: InsertTreatmentObjective): Promise<TreatmentObjective> {
+    const [objective] = await db.insert(treatmentObjectives).values(insertObjective).returning();
+    return objective;
+  }
+
+  async updateObjective(id: number, updates: Partial<InsertTreatmentObjective>): Promise<TreatmentObjective> {
+    const [objective] = await db.update(treatmentObjectives)
+      .set(updates)
+      .where(eq(treatmentObjectives.id, id))
+      .returning();
+    return objective;
+  }
+
+  async deleteObjective(id: number): Promise<void> {
+    await db.delete(treatmentObjectives).where(eq(treatmentObjectives.id, id));
+  }
+
+  // Treatment Progress
+  async getProgress(objectiveId: number): Promise<TreatmentProgress[]> {
+    return await db.select().from(treatmentProgress)
+      .where(eq(treatmentProgress.objectiveId, objectiveId))
+      .orderBy(desc(treatmentProgress.createdAt));
+  }
+
+  async createProgress(insertProgress: InsertTreatmentProgress): Promise<TreatmentProgress> {
+    const [progress] = await db.insert(treatmentProgress).values(insertProgress).returning();
+    return progress;
   }
 }
 
