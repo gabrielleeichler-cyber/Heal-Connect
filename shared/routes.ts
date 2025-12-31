@@ -11,7 +11,6 @@ import {
 
 export const api = {
   auth: {
-    // Replit Auth handles routes, but we might want status
     status: {
       method: 'GET' as const,
       path: '/api/user',
@@ -20,6 +19,15 @@ export const api = {
         401: z.object({ message: z.string() }),
       },
     }
+  },
+  clients: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/clients',
+      responses: {
+        200: z.array(z.custom<typeof users.$inferSelect>()),
+      },
+    },
   },
   journals: {
     list: {
@@ -54,6 +62,21 @@ export const api = {
         201: z.custom<typeof prompts.$inferSelect>(),
       },
     },
+    update: {
+      method: 'PATCH' as const,
+      path: '/api/prompts/:id',
+      input: insertPromptSchema.partial(),
+      responses: {
+        200: z.custom<typeof prompts.$inferSelect>(),
+      },
+    },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/prompts/:id',
+      responses: {
+        204: z.void(),
+      },
+    },
   },
   resources: {
     list: {
@@ -69,6 +92,21 @@ export const api = {
       input: insertResourceSchema,
       responses: {
         201: z.custom<typeof resources.$inferSelect>(),
+      },
+    },
+    update: {
+      method: 'PATCH' as const,
+      path: '/api/resources/:id',
+      input: insertResourceSchema.partial(),
+      responses: {
+        200: z.custom<typeof resources.$inferSelect>(),
+      },
+    },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/resources/:id',
+      responses: {
+        204: z.void(),
       },
     },
   },
@@ -95,7 +133,14 @@ export const api = {
       responses: {
         200: z.custom<typeof homework.$inferSelect>(),
       },
-    }
+    },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/homework/:id',
+      responses: {
+        204: z.void(),
+      },
+    },
   },
   reminders: {
     list: {
@@ -111,6 +156,13 @@ export const api = {
       input: insertReminderSchema,
       responses: {
         201: z.custom<typeof reminders.$inferSelect>(),
+      },
+    },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/reminders/:id',
+      responses: {
+        204: z.void(),
       },
     },
   }

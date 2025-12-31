@@ -27,18 +27,28 @@ import {
   ClipboardList, 
   Bell, 
   LogOut,
-  Heart
+  Heart,
+  Settings
 } from "lucide-react";
 import Dashboard from "@/pages/dashboard";
 import JournalPage from "@/pages/journal";
 import ResourcesPage from "@/pages/resources";
 import HomeworkPage from "@/pages/homework";
 import RemindersPage from "@/pages/reminders";
+import AdminPage from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 
-const navItems = [
+const clientNavItems = [
   { title: "Dashboard", url: "/", icon: Home },
   { title: "Journal", url: "/journal", icon: BookOpen },
+  { title: "Resources", url: "/resources", icon: FileText },
+  { title: "Homework", url: "/homework", icon: ClipboardList },
+  { title: "Reminders", url: "/reminders", icon: Bell },
+];
+
+const therapistNavItems = [
+  { title: "Dashboard", url: "/", icon: Home },
+  { title: "Admin", url: "/admin", icon: Settings },
   { title: "Resources", url: "/resources", icon: FileText },
   { title: "Homework", url: "/homework", icon: ClipboardList },
   { title: "Reminders", url: "/reminders", icon: Bell },
@@ -47,6 +57,9 @@ const navItems = [
 function AppSidebar() {
   const [location] = useLocation();
   const { user, logout, isLoggingOut } = useAuth();
+  
+  const isTherapist = user?.role === "therapist" || user?.isTherapist === true;
+  const navItems = isTherapist ? therapistNavItems : clientNavItems;
 
   return (
     <Sidebar>
@@ -130,6 +143,7 @@ function AuthenticatedApp() {
               <Route path="/resources" component={ResourcesPage} />
               <Route path="/homework" component={HomeworkPage} />
               <Route path="/reminders" component={RemindersPage} />
+              <Route path="/admin" component={AdminPage} />
               <Route component={NotFound} />
             </Switch>
           </main>

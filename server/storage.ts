@@ -8,11 +8,12 @@ import {
   type Homework, type InsertHomework,
   type Reminder, type InsertReminder
 } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, or, isNull } from "drizzle-orm";
 
 export interface IStorage {
-  // Auth
+  // Users
   getUser(id: string): Promise<User | undefined>;
+  getClients(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
 
   // Journals
@@ -22,26 +23,38 @@ export interface IStorage {
   // Prompts
   getPrompts(): Promise<Prompt[]>;
   createPrompt(prompt: InsertPrompt): Promise<Prompt>;
+  updatePrompt(id: number, updates: Partial<InsertPrompt>): Promise<Prompt>;
+  deletePrompt(id: number): Promise<void>;
 
   // Resources
-  getResources(): Promise<Resource[]>;
+  getResources(clientId?: string): Promise<Resource[]>;
   createResource(resource: InsertResource): Promise<Resource>;
+  updateResource(id: number, updates: Partial<InsertResource>): Promise<Resource>;
+  deleteResource(id: number): Promise<void>;
 
   // Homework
   getHomework(userId: string): Promise<Homework[]>;
+  getAllHomework(): Promise<Homework[]>;
   createHomework(homework: InsertHomework): Promise<Homework>;
   updateHomework(id: number, updates: Partial<InsertHomework>): Promise<Homework>;
+  deleteHomework(id: number): Promise<void>;
 
   // Reminders
   getReminders(userId: string): Promise<Reminder[]>;
+  getAllReminders(): Promise<Reminder[]>;
   createReminder(reminder: InsertReminder): Promise<Reminder>;
+  deleteReminder(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
-  // Auth
+  // Users
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
+  }
+
+  async getClients(): Promise<User[]> {
+    return await db.select().from(users).where(eq(users.role, "client"));
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
@@ -63,7 +76,7 @@ export class DatabaseStorage implements IStorage {
 
   // Prompts
   async getPrompts(): Promise<Prompt[]> {
-    return await db.select().from(prompts).where(eq(prompts.isActive, true));
+    return await db.select().from(prompts).where(eq(prompts.isActive, true)).orderBy(desc(prompts.createdAt));
   }
 
   async createPrompt(insertPrompt: InsertPrompt): Promise<Prompt> {
@@ -71,9 +84,27 @@ export class DatabaseStorage implements IStorage {
     return prompt;
   }
 
-  // Resources
-  async getResources(): Promise<Resource[]> {
-    return await db.select().from(resources);
+  async updatePrompt(id: number, updates: Partial<InsertPrompt>): Promise<Prompt> {
+    const [prompt] = await db.update(prompts)
+      .set(updates)
+      .where(eq(prompts.id, id))
+      .returning();
+    return prompt;
+  }
+
+  async deletePrompt(id: number): Promise<void> {
+    await db.delete(prompts).where(eq(prompts.id, id));
+  }
+
+  // Resources - filter by client or show all (clientId = null)
+  async getResources(clientId?: string): Promise<Resource[]> {
+    if (clientId) {
+      // Get resources assigned to this client OR general resources
+      return await db.select().from(resources)
+        .where(or(eq(resources.clientId, clientId), isNull(resources.clientId)))
+        .orderBy(desc(resources.createdAt));
+    }
+    return await db.select().from(resources).orderBy(desc(resources.createdAt));
   }
 
   async createResource(insertResource: InsertResource): Promise<Resource> {
@@ -81,9 +112,27 @@ export class DatabaseStorage implements IStorage {
     return resource;
   }
 
+  async updateResource(id: number, updates: Partial<InsertResource>): Promise<Resource> {
+    const [resource] = await db.update(resources)
+      .set(updates)
+      .where(eq(resources.id, id))
+      .returning();
+    return resource;
+  }
+
+  async deleteResource(id: number): Promise<void> {
+    await db.delete(resources).where(eq(resources.id, id));
+  }
+
   // Homework
   async getHomework(userId: string): Promise<Homework[]> {
-    return await db.select().from(homework).where(eq(homework.userId, userId));
+    return await db.select().from(homework)
+      .where(eq(homework.userId, userId))
+      .orderBy(desc(homework.createdAt));
+  }
+
+  async getAllHomework(): Promise<Homework[]> {
+    return await db.select().from(homework).orderBy(desc(homework.createdAt));
   }
 
   async createHomework(insertHomework: InsertHomework): Promise<Homework> {
@@ -99,14 +148,28 @@ export class DatabaseStorage implements IStorage {
     return hw;
   }
 
+  async deleteHomework(id: number): Promise<void> {
+    await db.delete(homework).where(eq(homework.id, id));
+  }
+
   // Reminders
   async getReminders(userId: string): Promise<Reminder[]> {
-    return await db.select().from(reminders).where(eq(reminders.userId, userId));
+    return await db.select().from(reminders)
+      .where(eq(reminders.userId, userId))
+      .orderBy(desc(reminders.scheduledTime));
+  }
+
+  async getAllReminders(): Promise<Reminder[]> {
+    return await db.select().from(reminders).orderBy(desc(reminders.scheduledTime));
   }
 
   async createReminder(insertReminder: InsertReminder): Promise<Reminder> {
     const [reminder] = await db.insert(reminders).values(insertReminder).returning();
     return reminder;
+  }
+
+  async deleteReminder(id: number): Promise<void> {
+    await db.delete(reminders).where(eq(reminders.id, id));
   }
 }
 

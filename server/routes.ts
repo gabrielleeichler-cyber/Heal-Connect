@@ -1,9 +1,9 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
+import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { z } from "zod";
 
 // Seed function to populate initial data
 async function seedDatabase() {
@@ -54,6 +54,9 @@ export async function registerRoutes(
   // Set up Replit Auth
   await setupAuth(app);
   registerAuthRoutes(app);
+  
+  // Register object storage routes for file uploads
+  registerObjectStorageRoutes(app);
 
   // Seed the database with initial data
   seedDatabase();
@@ -63,6 +66,23 @@ export async function registerRoutes(
     if (!req.isAuthenticated || !req.isAuthenticated()) return null;
     return req.user?.claims?.sub || null;
   };
+
+  // Helper to check if user is a therapist
+  const isTherapist = async (req: any): Promise<boolean> => {
+    const userId = getUserId(req);
+    if (!userId) return false;
+    const user = await storage.getUser(userId);
+    return user?.role === "therapist" || user?.isTherapist === true;
+  };
+
+  // Clients (therapist only)
+  app.get(api.clients.list.path, isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const clients = await storage.getClients();
+    res.json(clients);
+  });
 
   // Journals
   app.get(api.journals.list.path, isAuthenticated, async (req: any, res) => {
@@ -86,31 +106,87 @@ export async function registerRoutes(
     res.json(prompts);
   });
 
-  app.post(api.prompts.create.path, isAuthenticated, async (req, res) => {
+  app.post(api.prompts.create.path, isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Only therapists can create prompts" });
+    }
     const prompt = await storage.createPrompt(api.prompts.create.input.parse(req.body));
     res.status(201).json(prompt);
   });
 
+  app.patch("/api/prompts/:id", isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Only therapists can update prompts" });
+    }
+    const id = parseInt(req.params.id);
+    const updates = api.prompts.update.input.parse(req.body);
+    const updated = await storage.updatePrompt(id, updates);
+    res.json(updated);
+  });
+
+  app.delete("/api/prompts/:id", isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Only therapists can delete prompts" });
+    }
+    const id = parseInt(req.params.id);
+    await storage.deletePrompt(id);
+    res.sendStatus(204);
+  });
+
   // Resources
-  app.get(api.resources.list.path, isAuthenticated, async (req, res) => {
-    const resources = await storage.getResources();
+  app.get(api.resources.list.path, isAuthenticated, async (req: any, res) => {
+    const userId = getUserId(req);
+    const therapist = await isTherapist(req);
+    // Therapists see all resources; clients see only general + their own
+    const resources = therapist 
+      ? await storage.getResources() 
+      : await storage.getResources(userId || undefined);
     res.json(resources);
   });
 
-  app.post(api.resources.create.path, isAuthenticated, async (req, res) => {
+  app.post(api.resources.create.path, isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Only therapists can create resources" });
+    }
     const resource = await storage.createResource(api.resources.create.input.parse(req.body));
     res.status(201).json(resource);
+  });
+
+  app.patch("/api/resources/:id", isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Only therapists can update resources" });
+    }
+    const id = parseInt(req.params.id);
+    const updates = api.resources.update.input.parse(req.body);
+    const updated = await storage.updateResource(id, updates);
+    res.json(updated);
+  });
+
+  app.delete("/api/resources/:id", isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Only therapists can delete resources" });
+    }
+    const id = parseInt(req.params.id);
+    await storage.deleteResource(id);
+    res.sendStatus(204);
   });
 
   // Homework
   app.get(api.homework.list.path, isAuthenticated, async (req: any, res) => {
     const userId = getUserId(req);
     if (!userId) return res.sendStatus(401);
-    const homework = await storage.getHomework(userId);
+    
+    const therapist = await isTherapist(req);
+    const homework = therapist 
+      ? await storage.getAllHomework() 
+      : await storage.getHomework(userId);
     res.json(homework);
   });
 
-  app.post(api.homework.create.path, isAuthenticated, async (req, res) => {
+  app.post(api.homework.create.path, isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Only therapists can create homework" });
+    }
     const homework = await storage.createHomework(api.homework.create.input.parse(req.body));
     res.status(201).json(homework);
   });
@@ -122,17 +198,42 @@ export async function registerRoutes(
     res.json(updated);
   });
 
+  app.delete("/api/homework/:id", isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Only therapists can delete homework" });
+    }
+    const id = parseInt(req.params.id);
+    await storage.deleteHomework(id);
+    res.sendStatus(204);
+  });
+
   // Reminders
   app.get(api.reminders.list.path, isAuthenticated, async (req: any, res) => {
     const userId = getUserId(req);
     if (!userId) return res.sendStatus(401);
-    const reminders = await storage.getReminders(userId);
+    
+    const therapist = await isTherapist(req);
+    const reminders = therapist 
+      ? await storage.getAllReminders() 
+      : await storage.getReminders(userId);
     res.json(reminders);
   });
 
-  app.post(api.reminders.create.path, isAuthenticated, async (req, res) => {
+  app.post(api.reminders.create.path, isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Only therapists can create reminders" });
+    }
     const reminder = await storage.createReminder(api.reminders.create.input.parse(req.body));
     res.status(201).json(reminder);
+  });
+
+  app.delete("/api/reminders/:id", isAuthenticated, async (req: any, res) => {
+    if (!(await isTherapist(req))) {
+      return res.status(403).json({ message: "Only therapists can delete reminders" });
+    }
+    const id = parseInt(req.params.id);
+    await storage.deleteReminder(id);
+    res.sendStatus(204);
   });
 
   return httpServer;
