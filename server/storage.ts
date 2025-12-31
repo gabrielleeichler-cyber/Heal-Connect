@@ -2,6 +2,7 @@ import { db } from "./db";
 import { 
   users, journals, prompts, resources, homework, reminders,
   treatmentPlans, treatmentGoals, treatmentObjectives, treatmentProgress,
+  auditLogs, loginAttempts, sessionActivity, dataDisclosures,
   type User, type InsertUser,
   type Journal, type InsertJournal,
   type Prompt, type InsertPrompt,
@@ -11,9 +12,13 @@ import {
   type TreatmentPlan, type InsertTreatmentPlan,
   type TreatmentGoal, type InsertTreatmentGoal,
   type TreatmentObjective, type InsertTreatmentObjective,
-  type TreatmentProgress, type InsertTreatmentProgress
+  type TreatmentProgress, type InsertTreatmentProgress,
+  type AuditLog, type InsertAuditLog,
+  type LoginAttempt, type InsertLoginAttempt,
+  type SessionActivity, type InsertSessionActivity,
+  type DataDisclosure, type InsertDataDisclosure
 } from "@shared/schema";
-import { eq, desc, or, isNull, and } from "drizzle-orm";
+import { eq, desc, or, isNull, and, gte } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -73,6 +78,23 @@ export interface IStorage {
   // Treatment Progress
   getProgress(objectiveId: number): Promise<TreatmentProgress[]>;
   createProgress(progress: InsertTreatmentProgress): Promise<TreatmentProgress>;
+
+  // HIPAA Compliance - Audit Logging
+  createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+  getAuditLogs(userId?: string, startDate?: Date): Promise<AuditLog[]>;
+  getClientDataAccessLogs(clientId: string): Promise<AuditLog[]>;
+
+  // Login Attempts
+  createLoginAttempt(attempt: InsertLoginAttempt): Promise<LoginAttempt>;
+  getRecentLoginAttempts(email: string, since: Date): Promise<LoginAttempt[]>;
+
+  // Session Activity
+  updateSessionActivity(sessionId: string, userId: string): Promise<SessionActivity>;
+  getSessionActivity(sessionId: string): Promise<SessionActivity | undefined>;
+
+  // Data Disclosures
+  createDataDisclosure(disclosure: InsertDataDisclosure): Promise<DataDisclosure>;
+  getClientDisclosures(clientId: string): Promise<DataDisclosure[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -296,6 +318,82 @@ export class DatabaseStorage implements IStorage {
   async createProgress(insertProgress: InsertTreatmentProgress): Promise<TreatmentProgress> {
     const [progress] = await db.insert(treatmentProgress).values(insertProgress).returning();
     return progress;
+  }
+
+  // ===== HIPAA COMPLIANCE - AUDIT LOGGING =====
+  async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
+    const [auditLog] = await db.insert(auditLogs).values(log).returning();
+    return auditLog;
+  }
+
+  async getAuditLogs(userId?: string, startDate?: Date): Promise<AuditLog[]> {
+    let query = db.select().from(auditLogs);
+    if (userId && startDate) {
+      return await query
+        .where(and(eq(auditLogs.userId, userId), gte(auditLogs.createdAt, startDate)))
+        .orderBy(desc(auditLogs.createdAt));
+    } else if (userId) {
+      return await query.where(eq(auditLogs.userId, userId)).orderBy(desc(auditLogs.createdAt));
+    } else if (startDate) {
+      return await query.where(gte(auditLogs.createdAt, startDate)).orderBy(desc(auditLogs.createdAt));
+    }
+    return await query.orderBy(desc(auditLogs.createdAt)).limit(1000);
+  }
+
+  async getClientDataAccessLogs(clientId: string): Promise<AuditLog[]> {
+    return await db.select().from(auditLogs)
+      .where(eq(auditLogs.targetUserId, clientId))
+      .orderBy(desc(auditLogs.createdAt));
+  }
+
+  // ===== LOGIN ATTEMPTS =====
+  async createLoginAttempt(attempt: InsertLoginAttempt): Promise<LoginAttempt> {
+    const [loginAttempt] = await db.insert(loginAttempts).values(attempt).returning();
+    return loginAttempt;
+  }
+
+  async getRecentLoginAttempts(email: string, since: Date): Promise<LoginAttempt[]> {
+    return await db.select().from(loginAttempts)
+      .where(and(
+        eq(loginAttempts.email, email),
+        gte(loginAttempts.createdAt, since),
+        eq(loginAttempts.success, false)
+      ))
+      .orderBy(desc(loginAttempts.createdAt));
+  }
+
+  // ===== SESSION ACTIVITY =====
+  async updateSessionActivity(sessionId: string, userId: string): Promise<SessionActivity> {
+    const existing = await this.getSessionActivity(sessionId);
+    if (existing) {
+      const [updated] = await db.update(sessionActivity)
+        .set({ lastActivity: new Date() })
+        .where(eq(sessionActivity.sessionId, sessionId))
+        .returning();
+      return updated;
+    }
+    const [activity] = await db.insert(sessionActivity)
+      .values({ sessionId, userId, lastActivity: new Date() })
+      .returning();
+    return activity;
+  }
+
+  async getSessionActivity(sessionId: string): Promise<SessionActivity | undefined> {
+    const [activity] = await db.select().from(sessionActivity)
+      .where(eq(sessionActivity.sessionId, sessionId));
+    return activity;
+  }
+
+  // ===== DATA DISCLOSURES =====
+  async createDataDisclosure(disclosure: InsertDataDisclosure): Promise<DataDisclosure> {
+    const [record] = await db.insert(dataDisclosures).values(disclosure).returning();
+    return record;
+  }
+
+  async getClientDisclosures(clientId: string): Promise<DataDisclosure[]> {
+    return await db.select().from(dataDisclosures)
+      .where(eq(dataDisclosures.clientId, clientId))
+      .orderBy(desc(dataDisclosures.createdAt));
   }
 }
 

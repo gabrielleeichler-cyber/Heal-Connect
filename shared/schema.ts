@@ -111,6 +111,54 @@ export const treatmentProgress = pgTable("treatment_progress", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// ===== HIPAA COMPLIANCE TABLES =====
+
+// Audit log - tracks all access to protected health information (PHI)
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(), // Who performed the action
+  action: text("action").notNull(), // 'view', 'create', 'update', 'delete', 'login', 'logout', 'failed_login'
+  resourceType: text("resource_type").notNull(), // 'journal', 'treatment_plan', 'resource', etc.
+  resourceId: varchar("resource_id"), // ID of the accessed resource
+  targetUserId: varchar("target_user_id"), // Whose data was accessed (for client data)
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  details: text("details"), // Additional context (JSON string)
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Login attempts - for security monitoring and account lockout
+export const loginAttempts = pgTable("login_attempts", {
+  id: serial("id").primaryKey(),
+  email: varchar("email"),
+  userId: varchar("user_id"),
+  success: boolean("success").notNull(),
+  ipAddress: varchar("ip_address"),
+  userAgent: text("user_agent"),
+  failureReason: text("failure_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Session activity - track session usage for timeout management
+export const sessionActivity = pgTable("session_activity", {
+  id: serial("id").primaryKey(),
+  sessionId: varchar("session_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  lastActivity: timestamp("last_activity").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Data access disclosures - track when PHI is disclosed (HIPAA requirement)
+export const dataDisclosures = pgTable("data_disclosures", {
+  id: serial("id").primaryKey(),
+  clientId: varchar("client_id").notNull(), // Whose data was disclosed
+  disclosedBy: varchar("disclosed_by").notNull(), // Who disclosed it
+  disclosedTo: text("disclosed_to"), // Recipient description
+  purpose: text("purpose").notNull(), // Reason for disclosure
+  dataTypes: text("data_types").notNull(), // What types of data were disclosed
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, isTherapist: true, createdAt: true, updatedAt: true });
 export const insertJournalSchema = createInsertSchema(journals).omit({ id: true, date: true });
@@ -123,6 +171,12 @@ export const insertTreatmentPlanSchema = createInsertSchema(treatmentPlans).omit
 export const insertTreatmentGoalSchema = createInsertSchema(treatmentGoals).omit({ id: true, createdAt: true });
 export const insertTreatmentObjectiveSchema = createInsertSchema(treatmentObjectives).omit({ id: true, createdAt: true });
 export const insertTreatmentProgressSchema = createInsertSchema(treatmentProgress).omit({ id: true, createdAt: true });
+
+// HIPAA compliance schemas
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
+export const insertLoginAttemptSchema = createInsertSchema(loginAttempts).omit({ id: true, createdAt: true });
+export const insertSessionActivitySchema = createInsertSchema(sessionActivity).omit({ id: true, createdAt: true });
+export const insertDataDisclosureSchema = createInsertSchema(dataDisclosures).omit({ id: true, createdAt: true });
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -146,6 +200,16 @@ export type TreatmentObjective = typeof treatmentObjectives.$inferSelect;
 export type InsertTreatmentObjective = z.infer<typeof insertTreatmentObjectiveSchema>;
 export type TreatmentProgress = typeof treatmentProgress.$inferSelect;
 export type InsertTreatmentProgress = z.infer<typeof insertTreatmentProgressSchema>;
+
+// HIPAA compliance types
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type LoginAttempt = typeof loginAttempts.$inferSelect;
+export type InsertLoginAttempt = z.infer<typeof insertLoginAttemptSchema>;
+export type SessionActivity = typeof sessionActivity.$inferSelect;
+export type InsertSessionActivity = z.infer<typeof insertSessionActivitySchema>;
+export type DataDisclosure = typeof dataDisclosures.$inferSelect;
+export type InsertDataDisclosure = z.infer<typeof insertDataDisclosureSchema>;
 
 // Role permission helpers
 export const ROLE_HIERARCHY = {
