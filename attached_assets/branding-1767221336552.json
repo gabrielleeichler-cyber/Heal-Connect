@@ -1,0 +1,80 @@
+{
+  "colorScheme": "light",
+  "fonts": [
+    {
+      "family": "PT Serif",
+      "count": 41
+    },
+    {
+      "family": "Marcellus",
+      "count": 8
+    },
+    {
+      "family": "sans-serif",
+      "count": 3
+    }
+  ],
+  "colors": {
+    "primary": "#D4967D",
+    "accent": "#D4967D",
+    "background": "#E5E3DC",
+    "textPrimary": "#303636",
+    "link": "#D4967D"
+  },
+  "typography": {
+    "fontFamilies": {
+      "primary": "sans-serif",
+      "heading": "sans-serif"
+    },
+    "fontStacks": {
+      "body": [
+        "sans-serif"
+      ],
+      "heading": [
+        "sans-serif"
+      ],
+      "paragraph": [
+        "PT Serif"
+      ]
+    },
+    "fontSizes": {
+      "h1": "16px",
+      "h2": "44.8px",
+      "body": "22.4px"
+    }
+  },
+  "spacing": {
+    "baseUnit": 4,
+    "borderRadius": "0px"
+  },
+  "components": {},
+  "images": {
+    "logo": "File saved at: attached_assets/logo.webp",
+    "favicon": "File saved at: attached_assets/favicon.webp",
+    "ogImage": "http://static1.squarespace.com/static/6556cd8448fdb02bb4ebd185/t/65656a7504d4bc1ad151c4e9/1701145205351/Untitled_Artwork+2.PNG?format=1500w"
+  },
+  "__framework_hints": [],
+  "__llm_logo_reasoning": {
+    "selectedIndex": 1,
+    "reasoning": "Heuristic fallback: Good indicators: variant bonus (+8), in header, no link (brand logos usually link to homepage, penalty), header location, visible, top-left position, highest logo on page, extremely large (likely og:image, heavy penalty). Score: 55 (ahead by 30 points)",
+    "confidence": 0.65
+  },
+  "__llm_button_reasoning": {
+    "primary": {
+      "index": -1,
+      "text": "N/A",
+      "reasoning": "LLM failed"
+    },
+    "secondary": {
+      "index": -1,
+      "text": "N/A",
+      "reasoning": "LLM failed"
+    },
+    "confidence": 0
+  },
+  "confidence": {
+    "buttons": 0,
+    "colors": 0,
+    "overall": 0
+  }
+}
