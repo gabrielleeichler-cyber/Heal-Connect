@@ -37,6 +37,7 @@ import HomeworkPage from "@/pages/homework";
 import RemindersPage from "@/pages/reminders";
 import AdminPage from "@/pages/admin";
 import NotFound from "@/pages/not-found";
+import { ReminderNotifier } from "@/components/ReminderNotifier";
 
 const clientNavItems = [
   { title: "Dashboard", url: "/", icon: Home },
@@ -129,6 +130,7 @@ function AuthenticatedApp() {
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
+      <ReminderNotifier />
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">

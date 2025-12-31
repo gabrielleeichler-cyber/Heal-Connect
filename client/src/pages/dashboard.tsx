@@ -2,6 +2,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { NotificationBanner } from "@/components/NotificationBanner";
 import { BookOpen, FileText, ClipboardList, Bell, CheckCircle, Clock } from "lucide-react";
 import type { Journal, Resource, Homework, Reminder } from "@shared/schema";
 
@@ -30,6 +31,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <NotificationBanner />
       <div>
         <h2 className="text-2xl font-semibold" data-testid="text-welcome">
           Welcome back, {user?.firstName || "there"}
