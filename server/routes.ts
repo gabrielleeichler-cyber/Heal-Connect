@@ -1,9 +1,40 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
+import helmet from "helmet";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { storage } from "./storage";
 import { isTherapistRole, isOfficeAdminRole } from "@shared/schema";
+import type { InsertAuditLog } from "@shared/schema";
+
+// Session timeout in minutes (HIPAA recommends 15-30 minutes)
+const SESSION_TIMEOUT_MINUTES = 30;
+
+// Helper to create audit log entries
+const createAuditEntry = async (
+  userId: string,
+  action: string,
+  resourceType: string,
+  resourceId?: string,
+  targetUserId?: string,
+  req?: any,
+  details?: string
+) => {
+  try {
+    await storage.createAuditLog({
+      userId,
+      action,
+      resourceType,
+      resourceId: resourceId || null,
+      targetUserId: targetUserId || null,
+      ipAddress: req?.ip || req?.connection?.remoteAddress || null,
+      userAgent: req?.headers?.["user-agent"] || null,
+      details: details || null,
+    });
+  } catch (error) {
+    console.error("Failed to create audit log:", error);
+  }
+};
 
 // Seed function to populate initial data
 async function seedDatabase() {
@@ -71,6 +102,57 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Apply security headers (HIPAA requirement)
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'", "https:"],
+        fontSrc: ["'self'", "data:"],
+        objectSrc: ["'none'"],
+        mediaSrc: ["'self'"],
+        frameSrc: ["'none'"],
+      },
+    },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+    },
+    noSniff: true,
+    xssFilter: true,
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  }));
+
+  // Session activity tracking middleware (for session timeout)
+  app.use(async (req: any, res, next) => {
+    if (req.isAuthenticated && req.isAuthenticated() && req.sessionID && req.user?.claims?.sub) {
+      const userId = req.user.claims.sub;
+      const activity = await storage.getSessionActivity(req.sessionID);
+      
+      if (activity) {
+        const lastActivity = new Date(activity.lastActivity);
+        const now = new Date();
+        const minutesSinceLastActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60);
+        
+        if (minutesSinceLastActivity > SESSION_TIMEOUT_MINUTES) {
+          // Session timed out - log out user
+          await createAuditEntry(userId, "session_timeout", "session", req.sessionID, undefined, req);
+          req.logout((err: any) => {
+            if (err) console.error("Logout error:", err);
+          });
+          return res.status(401).json({ message: "Session expired due to inactivity" });
+        }
+      }
+      
+      // Update last activity
+      await storage.updateSessionActivity(req.sessionID, userId);
+    }
+    next();
+  });
+
   await setupAuth(app);
   registerAuthRoutes(app);
   registerObjectStorageRoutes(app);
@@ -101,7 +183,12 @@ export async function registerRoutes(
   });
 
   app.get("/api/journals/client/:clientId", isAuthenticated, requireTherapist, async (req: any, res) => {
+    const userId = getUserId(req);
     const { clientId } = req.params;
+    
+    // Log access to client journal data (HIPAA audit requirement)
+    await createAuditEntry(userId!, "view", "journal", undefined, clientId, req);
+    
     const journals = await storage.getSharedJournals(clientId);
     res.json(journals);
   });
@@ -219,6 +306,8 @@ export async function registerRoutes(
       const plans = await storage.getAllTreatmentPlans();
       res.json(plans);
     } else {
+      // Log client access to their own treatment plan
+      await createAuditEntry(userId, "view", "treatment_plan", undefined, userId, req);
       const plan = await storage.getTreatmentPlan(userId);
       res.json(plan ? [plan] : []);
     }
@@ -232,6 +321,11 @@ export async function registerRoutes(
     // Clients can only view their own plan
     if (!isTherapistRole(role) && userId !== clientId) {
       return res.status(403).json({ message: "Access denied" });
+    }
+    
+    // Log therapist access to client treatment plan (HIPAA audit)
+    if (isTherapistRole(role) && userId !== clientId) {
+      await createAuditEntry(userId!, "view", "treatment_plan", undefined, clientId, req);
     }
     
     const plan = await storage.getTreatmentPlan(clientId);
@@ -345,6 +439,88 @@ export async function registerRoutes(
   app.post("/api/treatment-progress", isAuthenticated, requireTherapist, async (req: any, res) => {
     const progress = await storage.createProgress(req.body);
     res.status(201).json(progress);
+  });
+
+  // ===== HIPAA COMPLIANCE ENDPOINTS =====
+  
+  // Audit logs (therapist only - for compliance reporting)
+  app.get("/api/audit-logs", isAuthenticated, requireTherapist, async (req: any, res) => {
+    const userId = getUserId(req);
+    const { targetUserId, startDate } = req.query;
+    const start = startDate ? new Date(startDate as string) : undefined;
+    
+    // Log that someone is viewing audit logs
+    await createAuditEntry(userId!, "view", "audit_logs", undefined, targetUserId as string, req);
+    
+    const logs = await storage.getAuditLogs(targetUserId as string, start);
+    res.json(logs);
+  });
+
+  // Client can view who has accessed their data (HIPAA transparency requirement)
+  app.get("/api/my-data-access", isAuthenticated, async (req: any, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.sendStatus(401);
+    
+    const logs = await storage.getClientDataAccessLogs(userId);
+    // Filter to only show relevant access events, hide internal details
+    const sanitizedLogs = logs.map(log => ({
+      action: log.action,
+      resourceType: log.resourceType,
+      createdAt: log.createdAt,
+      accessedBy: log.userId !== userId ? "Healthcare Provider" : "You",
+    }));
+    res.json(sanitizedLogs);
+  });
+
+  // Data disclosures - record when PHI is shared outside the system
+  app.post("/api/data-disclosures", isAuthenticated, requireTherapist, async (req: any, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.sendStatus(401);
+    
+    const { clientId, disclosedTo, purpose, dataTypes } = req.body;
+    const disclosure = await storage.createDataDisclosure({
+      clientId,
+      disclosedBy: userId,
+      disclosedTo,
+      purpose,
+      dataTypes,
+    });
+    
+    // Log the disclosure
+    await createAuditEntry(userId, "create", "data_disclosure", String(disclosure.id), clientId, req);
+    
+    res.status(201).json(disclosure);
+  });
+
+  // Client can view their disclosure history
+  app.get("/api/my-disclosures", isAuthenticated, async (req: any, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.sendStatus(401);
+    
+    const disclosures = await storage.getClientDisclosures(userId);
+    res.json(disclosures);
+  });
+
+  // Session status endpoint (for frontend timeout tracking)
+  app.get("/api/session-status", isAuthenticated, async (req: any, res) => {
+    const userId = getUserId(req);
+    if (!userId || !req.sessionID) return res.sendStatus(401);
+    
+    const activity = await storage.getSessionActivity(req.sessionID);
+    if (!activity) {
+      return res.json({ valid: true, remainingMinutes: SESSION_TIMEOUT_MINUTES });
+    }
+    
+    const lastActivity = new Date(activity.lastActivity);
+    const now = new Date();
+    const minutesSinceLastActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60);
+    const remainingMinutes = Math.max(0, SESSION_TIMEOUT_MINUTES - minutesSinceLastActivity);
+    
+    res.json({ 
+      valid: remainingMinutes > 0,
+      remainingMinutes: Math.round(remainingMinutes),
+      timeoutMinutes: SESSION_TIMEOUT_MINUTES 
+    });
   });
 
   return httpServer;

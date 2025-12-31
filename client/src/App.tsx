@@ -39,6 +39,7 @@ import TreatmentPlanPage from "@/pages/treatment-plan";
 import AdminPage from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 import { ReminderNotifier } from "@/components/ReminderNotifier";
+import { SessionTimeoutWarning } from "@/components/SessionTimeoutWarning";
 import { Target } from "lucide-react";
 
 const clientNavItems = [
@@ -146,6 +147,7 @@ function AuthenticatedApp() {
   return (
     <SidebarProvider style={style as React.CSSProperties}>
       <ReminderNotifier />
+      <SessionTimeoutWarning />
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
