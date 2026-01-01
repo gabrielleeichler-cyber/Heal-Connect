@@ -33,7 +33,7 @@ export interface IStorage {
   createJournal(journal: InsertJournal): Promise<Journal>;
 
   // Prompts
-  getPrompts(): Promise<Prompt[]>;
+  getPrompts(clientId?: string): Promise<Prompt[]>;
   createPrompt(prompt: InsertPrompt): Promise<Prompt>;
   updatePrompt(id: number, updates: Partial<InsertPrompt>): Promise<Prompt>;
   deletePrompt(id: number): Promise<void>;
@@ -140,7 +140,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Prompts
-  async getPrompts(): Promise<Prompt[]> {
+  async getPrompts(clientId?: string): Promise<Prompt[]> {
+    if (clientId) {
+      // Return prompts for this specific client OR global prompts (clientId is null)
+      return await db.select().from(prompts)
+        .where(and(eq(prompts.isActive, true), or(eq(prompts.clientId, clientId), isNull(prompts.clientId))))
+        .orderBy(desc(prompts.createdAt));
+    }
+    // Return all active prompts (for therapists viewing all)
     return await db.select().from(prompts).where(eq(prompts.isActive, true)).orderBy(desc(prompts.createdAt));
   }
 

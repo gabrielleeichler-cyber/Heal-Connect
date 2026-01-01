@@ -208,14 +208,20 @@ export async function registerRoutes(
   });
 
   // ===== PROMPTS (therapist only for write) =====
-  app.get("/api/prompts", isAuthenticated, async (req, res) => {
-    const prompts = await storage.getPrompts();
+  app.get("/api/prompts", isAuthenticated, async (req: any, res) => {
+    const userId = getUserId(req);
+    const role = await getUserRole(req);
+    // Clients see only prompts assigned to them or global prompts
+    // Therapists see all prompts
+    const prompts = isTherapistRole(role)
+      ? await storage.getPrompts()
+      : await storage.getPrompts(userId!);
     res.json(prompts);
   });
 
   app.post("/api/prompts", isAuthenticated, requireTherapist, async (req: any, res) => {
-    const { content, isActive } = req.body;
-    const prompt = await storage.createPrompt({ content, isActive: isActive ?? true });
+    const { content, isActive, clientId } = req.body;
+    const prompt = await storage.createPrompt({ content, isActive: isActive ?? true, clientId: clientId || null });
     res.status(201).json(prompt);
   });
 

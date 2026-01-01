@@ -34,6 +34,7 @@ export const prompts = pgTable("prompts", {
   id: serial("id").primaryKey(),
   content: text("content").notNull(),
   isActive: boolean("is_active").default(true),
+  clientId: varchar("client_id"), // If null, available to all clients; if set, only for that client
   createdAt: timestamp("created_at").defaultNow(),
 });
 
