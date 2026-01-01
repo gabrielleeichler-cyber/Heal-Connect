@@ -16,12 +16,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Trash2, Edit, FileText, Lightbulb, Users, Download, ShieldAlert } from "lucide-react";
 import type { Prompt, Resource, User } from "@shared/schema";
 
-function PromptForm({ prompt, onSuccess }: { prompt?: Prompt; onSuccess: () => void }) {
+function PromptForm({ prompt, clients, onSuccess }: { prompt?: Prompt; clients: User[]; onSuccess: () => void }) {
   const [content, setContent] = useState(prompt?.content || "");
+  const [clientId, setClientId] = useState<string>(prompt?.clientId || "");
   const { toast } = useToast();
 
+  const getPayload = () => {
+    const payload: Record<string, unknown> = { content, isActive: true };
+    if (clientId) {
+      payload.clientId = clientId;
+    }
+    return payload;
+  };
+
   const createMutation = useMutation({
-    mutationFn: () => apiRequest("/api/prompts", { method: "POST", body: JSON.stringify({ content, isActive: true }) }),
+    mutationFn: () => apiRequest("/api/prompts", { method: "POST", body: JSON.stringify(getPayload()) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/prompts"] });
       toast({ title: "Prompt created" });
@@ -30,7 +39,7 @@ function PromptForm({ prompt, onSuccess }: { prompt?: Prompt; onSuccess: () => v
   });
 
   const updateMutation = useMutation({
-    mutationFn: () => apiRequest(`/api/prompts/${prompt?.id}`, { method: "PATCH", body: JSON.stringify({ content }) }),
+    mutationFn: () => apiRequest(`/api/prompts/${prompt?.id}`, { method: "PATCH", body: JSON.stringify({ content, clientId: clientId || null }) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/prompts"] });
       toast({ title: "Prompt updated" });
@@ -59,6 +68,25 @@ function PromptForm({ prompt, onSuccess }: { prompt?: Prompt; onSuccess: () => v
           rows={3}
           data-testid="input-prompt-content"
         />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="prompt-client">Assign to Client</Label>
+        <Select value={clientId} onValueChange={setClientId}>
+          <SelectTrigger data-testid="select-prompt-client">
+            <SelectValue placeholder="All clients" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">All Clients</SelectItem>
+            {clients.map((client) => (
+              <SelectItem key={client.id} value={client.id}>
+                {client.firstName || client.email || "Unknown"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Leave as "All Clients" for prompts available to everyone
+        </p>
       </div>
       <Button 
         type="submit" 
@@ -299,7 +327,7 @@ export default function AdminPage() {
                 <DialogHeader>
                   <DialogTitle>{editingPrompt ? "Edit" : "New"} Prompt</DialogTitle>
                 </DialogHeader>
-                <PromptForm prompt={editingPrompt} onSuccess={closePromptDialog} />
+                <PromptForm prompt={editingPrompt} clients={clients} onSuccess={closePromptDialog} />
               </DialogContent>
             </Dialog>
           </div>
@@ -321,7 +349,18 @@ export default function AdminPage() {
               {prompts.map((prompt) => (
                 <Card key={prompt.id} data-testid={`card-prompt-${prompt.id}`}>
                   <CardContent className="py-4 flex items-start justify-between gap-4">
-                    <p className="flex-1">{prompt.content}</p>
+                    <div className="flex-1 space-y-2">
+                      <p>{prompt.content}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {prompt.clientId ? (
+                          <Badge variant="outline" className="text-xs">
+                            Assigned to: {clients.find(c => c.id === prompt.clientId)?.firstName || "Client"}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">All Clients</Badge>
+                        )}
+                      </div>
+                    </div>
                     <div className="flex gap-1">
                       <Button
                         variant="ghost"

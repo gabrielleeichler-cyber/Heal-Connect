@@ -211,8 +211,8 @@ export async function registerRoutes(
   app.get("/api/prompts", isAuthenticated, async (req: any, res) => {
     const userId = getUserId(req);
     const role = await getUserRole(req);
-    // Clients see only prompts assigned to them or global prompts
-    // Therapists see all prompts
+    // Therapists see all prompts for management
+    // Clients and office admins see only prompts assigned to them or global prompts
     const prompts = isTherapistRole(role)
       ? await storage.getPrompts()
       : await storage.getPrompts(userId!);
